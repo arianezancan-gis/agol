@@ -1,0 +1,50 @@
+from arcgis.gis import GIS
+import pandas as pd
+
+usuario = ""
+senha = ""
+
+gis = GIS("https://www.arcgis.com", usuario, senha)
+
+# Buscar todos os Web Maps da organização
+webmaps = gis.content.search(
+    query='type:"Web Map" AND orgid:' + gis.properties.id,
+    max_items=10000
+)
+
+data = []
+
+for wm in webmaps:
+    try:
+        wm_data = wm.get_data()
+        operational_layers = wm_data.get("operationalLayers", [])
+
+        webmap_url = f"https://www.arcgis.com/home/webmap/viewer.html?webmap={wm.id}"
+
+        for layer in operational_layers:
+            
+            layer_name = layer.get("title", "Sem nome")
+            layer_url = layer.get("url", None)
+
+            if layer_url:
+                data.append({
+                    "Layer_Name": layer_name,
+                    "Layer_URL": layer_url,
+                    "WebMap_Name": wm.title,
+                    "WebMap_URL": webmap_url
+                })
+
+    except Exception as e:
+        print(f"Erro ao processar {wm.title}: {e}")
+
+# Criar DataFrame
+df = pd.DataFrame(data)
+
+# Remover linhas duplicadas (caso existam)
+df = df.drop_duplicates()
+
+# Exportar para Excel
+output_file = "relatorio_webmaps_camadas_arcgis_online.xlsx"
+df.to_excel(output_file, index=False)
+
+print(f"Relatório gerado com sucesso: {output_file}")
