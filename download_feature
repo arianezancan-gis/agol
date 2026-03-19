@@ -1,0 +1,48 @@
+from arcgis.gis import GIS
+from pathlib import Path
+
+usuario = "seu usuario"
+senha = "sua senha"
+
+# --- conexão ---
+gis = GIS("https://www.arcgis.com", usuario, senha)
+
+# --- inputs ---
+item_id = "123456"  # itemId do Hosted Feature Layer / Feature Service
+out_dir = Path(r"C:\agol_download")
+out_dir.mkdir(parents=True, exist_ok=True)
+
+# --- obtém o item ---
+item = gis.content.get(item_id)
+if item is None:
+    raise RuntimeError("Item não encontrado (verifique o itemId e permissões).")
+
+# --- exporta e baixa o conteúdo (recomendado: File Geodatabase) ---
+export_item = item.export(title=f"{item.title}_export", export_format="File Geodatabase")
+zip_path = export_item.download(save_path=str(out_dir))  # baixa um .zip
+export_item.delete(force=True)  # opcional: remove o item exportado do seu conteúdo
+
+print("Export baixado em:", zip_path)
+
+# --- baixa anexos (attachments) por camada/tabela ---
+layers = (item.layers or []) + (item.tables or [])
+for lyr in layers:
+    if not getattr(lyr.properties, "hasAttachments", False):
+        continue
+
+    layer_dir = out_dir / f"{lyr.properties.name}_attachments"
+    layer_dir.mkdir(parents=True, exist_ok=True)
+
+    oid_info = lyr.query(where="1=1", return_ids_only=True, order_by_fields="OBJECTID ASC")
+    oids = oid_info.get("objectIds") or []
+
+    for oid in oids:
+        att_list = lyr.attachments.get_list(oid=oid) or []
+        for att in att_list:
+            lyr.attachments.download(
+                oid=oid,
+                attachment_id=att["id"],
+                save_path=str(layer_dir)
+            )
+
+print("Anexos baixados em:", out_dir)
