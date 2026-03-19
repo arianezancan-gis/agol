@@ -1,0 +1,47 @@
+from arcgis.gis import GIS
+import pandas as pd
+import datetime
+import os
+
+date = datetime.datetime.now() - datetime.timedelta(days=2)
+date = datetime.datetime.now() 
+reportdate = date.strftime("%Y-%m-%d")
+usuario = ""
+senha = ""
+
+gis_account = GIS("https://www.arcgis.com", usuario,senha)
+report = gis_account.users.me.report(report_type='content',start_time = '',duration = 'monthly')
+items = gis_account.content.search("OrganizationItems_{}".format(reportdate),max_items=1)
+items[0].download("C:\Base de dados")
+print(items[0])
+print ("Downloaded AGOL Items Report")
+gis_account.content.delete_items(items,permanent=True)
+os.rename("C:\Base de dados\OrganizationItems_{}.csv".format(reportdate),
+          "C:\Base de dados\OrganizationItems_{}_{}.csv".format(reportdate,usuario))
+df = pd.read_csv("C:\Base de dados\OrganizationItems_{}_{}.csv".format(reportdate,usuario))
+
+df["Feature Storage Creditos Dia"] = df["Feature Storage Size"] /10 * 2.4 /30
+df["Feature Storage Creditos Dia"] = df["Feature Storage Creditos Dia"].round(3)
+df["File Storage Creditos Dia"]= df["File Storage Size"] / 1024 * 1.2 /30
+df["File Storage Creditos Dia"] = df["File Storage Creditos Dia"].round(3)
+df["Total Creditos Dia"] = df["File Storage Creditos Dia"] + df["Feature Storage Creditos Dia"]
+
+colunas = [
+    "Title", 
+    "Item Type", 
+    "Owner", 
+    "Date Created", 
+    "Feature Storage Size",
+    "File Storage Size", 
+    "Feature Storage Creditos Dia",
+    "File Storage Creditos Dia",
+    "Total Creditos Dia"
+]
+tabela = df[colunas]
+
+excel_path = "C:\Base de dados\Relatorio_AGOL.xlsx"
+
+# Salvar em Excel
+tabela.to_excel(excel_path, index=False)
+
+print(f"Tabela salva com sucesso em: {excel_path}")
