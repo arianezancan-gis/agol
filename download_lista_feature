@@ -1,0 +1,82 @@
+from arcgis.gis import GIS
+from pathlib import Path
+import pandas as pd
+import re
+
+# --- conexão ---
+usuario = "usuario"
+senha = "senha"
+gis = GIS("https://www.arcgis.com",usuario, senha)
+
+# --- inputs ---
+excel_path = Path(r"D:\agol_download\lista_itemids.xlsx")   # sua planilha
+coluna_id = "item_id"                         # nome da coluna com os itemId
+out_base = Path(r"D:\agol_download")
+out_base.mkdir(parents=True, exist_ok=True)
+
+def safe_name(txt: str, maxlen=120):
+    txt = re.sub(r"[^A-Za-z0-9]+", "_", str(txt)).strip("_")
+    return txt[:maxlen] if txt else "sem_nome"
+
+# --- lê IDs do Excel ---
+df = pd.read_excel(excel_path)
+item_ids = (
+    df[coluna_id]
+    .dropna()
+    .astype(str)
+    .str.strip()
+    .unique()
+    .tolist()
+)
+
+for item_id in item_ids:
+    print(f"\nProcessando itemId: {item_id}")
+
+    # --- obtém o item ---
+    item = gis.content.get(item_id)
+    if item is None:
+        print("  Item não encontrado (verifique itemId e permissões).")
+        continue
+
+    out_dir = out_base / f"{safe_name(item.title)}_{item.id}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # --- exporta e baixa o conteúdo (FGDB) ---
+    try:
+        export_item = item.export(
+            title=f"{safe_name(item.title)}_export",
+            export_format="File Geodatabase"
+        )
+        zip_path = export_item.download(save_path=str(out_dir))  # baixa um .zip
+        export_item.delete(force=True)  # opcional
+        print("  Export baixado em:", zip_path)
+    except Exception as e:
+        print("  Falha no export/download:", e)
+
+    # --- baixa anexos (attachments) por camada/tabela ---
+    try:
+        layers = (item.layers or []) + (item.tables or [])
+        for lyr in layers:
+            if not getattr(lyr.properties, "hasAttachments", False):
+                continue
+
+            layer_dir = out_dir / f"{safe_name(lyr.properties.name)}_attachments"
+            layer_dir.mkdir(parents=True, exist_ok=True)
+
+            oid_info = lyr.query(where="1=1", return_ids_only=True, order_by_fields="OBJECTID ASC")
+            oids = oid_info.get("objectIds") or []
+
+            for oid in oids:
+                att_list = lyr.attachments.get_list(oid=oid) or []
+                for att in att_list:
+                    lyr.attachments.download(
+                        oid=oid,
+                        attachment_id=att["id"],
+                        save_path=str(layer_dir)
+                    )
+
+            print(f"  Attachments baixados: {lyr.properties.name}")
+    except Exception as e:
+        print("  Falha ao baixar attachments:", e)
+
+print("\nConcluído.")
